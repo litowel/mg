@@ -1,0 +1,121 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive Definition
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null && request.auth.token.email_verified == true; }
+    function isOwner(ownerId) { return isSignedIn() && ownerId == request.auth.uid; }
+    
+    // Validation Helpers
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'name', 'country', 'createdAt', 'updatedAt']) &&
+             data.uid == request.auth.uid &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.country is string && data.country.size() > 0 && data.country.size() <= 100 &&
+             data.createdAt == request.time &&
+             data.updatedAt == request.time &&
+             (!('skills' in data) || (data.skills is list && data.skills.size() <= 20)) &&
+             (!('businessType' in data) || (data.businessType is string && data.businessType in ['buyer', 'seller', 'freelancer'])) &&
+             (!('reputationScore' in data) || (data.reputationScore is number));
+    }
+    
+    function isValidUserUpdate(data) {
+      return data.updatedAt == request.time && data.uid == existing().uid && data.createdAt == existing().createdAt &&
+             (!('name' in data) || (data.name is string && data.name.size() > 0 && data.name.size() <= 100)) &&
+             (!('country' in data) || (data.country is string && data.country.size() > 0 && data.country.size() <= 100)) &&
+             (!('skills' in data) || (data.skills is list && data.skills.size() <= 20)) &&
+             (!('businessType' in data) || (data.businessType is string && data.businessType in ['buyer', 'seller', 'freelancer']));
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAll(['sellerId', 'title', 'description', 'price', 'type', 'status', 'createdAt', 'updatedAt']) &&
+             data.sellerId == request.auth.uid &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+             data.description is string && data.description.size() <= 5000 &&
+             data.price is number && data.price >= 0 &&
+             data.type is string && data.type in ['physical', 'service', 'digital'] &&
+             data.status is string && data.status in ['active', 'inactive'] &&
+             data.createdAt == request.time &&
+             data.updatedAt == request.time;
+    }
+
+    function isValidProductUpdate(data) {
+      return data.updatedAt == request.time && data.sellerId == existing().sellerId && data.createdAt == existing().createdAt &&
+             (!('title' in data) || (data.title is string && data.title.size() > 0 && data.title.size() <= 200)) &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 5000)) &&
+             (!('price' in data) || (data.price is number && data.price >= 0)) &&
+             (!('type' in data) || (data.type is string && data.type in ['physical', 'service', 'digital'])) &&
+             (!('status' in data) || (data.status is string && data.status in ['active', 'inactive']));
+    }
+
+    function isValidAgent(data) {
+      return data.keys().hasAll(['ownerId', 'type', 'name', 'prompt', 'status', 'createdAt', 'updatedAt']) &&
+             data.ownerId == request.auth.uid &&
+             data.type is string && data.type in ['seller', 'freelancer', 'content_creator'] &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.prompt is string && data.prompt.size() <= 10000 &&
+             data.status is string && data.status in ['active', 'paused'] &&
+             data.createdAt == request.time &&
+             data.updatedAt == request.time;
+    }
+
+    function isValidAgentUpdate(data) {
+      return data.updatedAt == request.time && data.ownerId == existing().ownerId && data.createdAt == existing().createdAt &&
+             (!('type' in data) || (data.type is string && data.type in ['seller', 'freelancer', 'content_creator'])) &&
+             (!('name' in data) || (data.name is string && data.name.size() > 0 && data.name.size() <= 100)) &&
+             (!('prompt' in data) || (data.prompt is string && data.prompt.size() <= 10000)) &&
+             (!('status' in data) || (data.status is string && data.status in ['active', 'paused']));
+    }
+
+    // Collections
+    
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isValidId(userId) && isSignedIn() && userId == request.auth.uid && isValidUser(incoming()) && incoming().keys().size() <= 8;
+      allow update: if isValidId(userId) && isOwner(userId) && isValidUserUpdate(incoming()) && 
+                    incoming().diff(existing()).affectedKeys().hasOnly(['name', 'country', 'skills', 'businessType', 'updatedAt']) &&
+                    !('reputationScore' in incoming().diff(existing()).affectedKeys()); // Rep score strictly managed by trigger or admin
+      allow delete: if false;
+    }
+
+    match /wallets/{walletId} {
+      allow get: if isSignedIn() && walletId == request.auth.uid;
+      allow list: if false; // No list
+      allow create: if isValidId(walletId) && isSignedIn() && walletId == request.auth.uid && 
+                    incoming().keys().hasAll(['balanceUpc', 'createdAt', 'updatedAt']) &&
+                    incoming().balanceUpc == 0 && 
+                    incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+                    incoming().keys().size() == 3;
+      allow update: if false; // Clients cannot update wallet balances directly
+      allow delete: if false;
+    }
+
+    match /products/{productId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && (resource.data.status == 'active' || resource.data.sellerId == request.auth.uid);
+
+      allow create: if isValidId(productId) && isSignedIn() && isValidProduct(incoming()) && incoming().keys().size() <= 8;
+      allow update: if isValidId(productId) && isOwner(existing().sellerId) && isValidProductUpdate(incoming()) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'price', 'type', 'status', 'updatedAt']);
+      allow delete: if isValidId(productId) && isOwner(existing().sellerId);
+    }
+
+    match /agents/{agentId} {
+      allow get: if isSignedIn() && isOwner(resource.data.ownerId);
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isValidId(agentId) && isSignedIn() && isValidAgent(incoming()) && incoming().keys().size() <= 7;
+      allow update: if isValidId(agentId) && isOwner(existing().ownerId) && isValidAgentUpdate(incoming()) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['name', 'prompt', 'status', 'updatedAt']);
+      allow delete: if isValidId(agentId) && isOwner(existing().ownerId);
+    }
+  }
+}

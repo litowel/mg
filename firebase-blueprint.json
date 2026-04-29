@@ -1,0 +1,80 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with basic information, skills, and business type.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "country": { "type": "string" },
+        "skills": { "type": "array", "items": { "type": "string" } },
+        "businessType": { "type": "string", "enum": ["buyer", "seller", "freelancer"] },
+        "reputationScore": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "country", "createdAt", "updatedAt"]
+    },
+    "Wallet": {
+      "title": "Wallet",
+      "description": "User wallet containing UpCredit and fiat balances.",
+      "type": "object",
+      "properties": {
+        "balanceUpc": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["balanceUpc", "createdAt", "updatedAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "A product or service listed by a user on the marketplace.",
+      "type": "object",
+      "properties": {
+        "sellerId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "type": { "type": "string", "enum": ["physical", "service", "digital"] },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["sellerId", "title", "description", "price", "type", "status", "createdAt", "updatedAt"]
+    },
+    "Agent": {
+      "title": "Agent",
+      "description": "An AI Agent created by a user.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "type": { "type": "string", "enum": ["seller", "freelancer", "content_creator"] },
+        "name": { "type": "string" },
+        "prompt": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "paused"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "type", "name", "prompt", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Main user profiles."
+    },
+    "/wallets/{walletId}": {
+      "schema": { "$ref": "#/entities/Wallet" },
+      "description": "Wallets for each user. User ID matches Wallet ID."
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Marketplace products."
+    },
+    "/agents/{agentId}": {
+      "schema": { "$ref": "#/entities/Agent" },
+      "description": "AI agents created by users."
+    }
+  }
+}
